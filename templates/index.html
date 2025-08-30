@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Manual OCR Capture with Flask</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 20px; background-color: #f4f7f9; color: #333; }
+        .container { max-width: 800px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px; background-color: #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; }
+        .video-container { position: relative; width: 100%; max-width: 640px; margin: auto; }
+        #video, #canvas { width: 100%; height: auto; border-radius: 5px; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #text-output { margin-top: 20px; padding: 15px; background-color: #e9ecef; border-radius: 8px; text-align: left; white-space: pre-wrap; word-wrap: break-word; min-height: 50px; }
+        .button-group { margin-top: 15px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: none; color: white; margin: 5px; }
+        #start-btn { background-color: #007bff; }
+        #capture-btn { background-color: #28a745; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>手動撮影OCR</h1>
+        <p>カメラを起動し、中央の赤枠部分だけOCRします。</p>
+
+        <div class="video-container">
+            <video id="video" autoplay></video>
+            <canvas id="overlay"></canvas>
+        </div>
+
+        <div class="button-group">
+            <button id="start-btn">カメラ起動</button>
+            <button id="capture-btn" disabled>撮影してOCR</button>
+        </div>
+
+        <div id="text-output">処理結果がここに表示されます。</div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const startBtn = document.getElementById('start-btn');
+        const captureBtn = document.getElementById('capture-btn');
+        const textOutput = document.getElementById('text-output');
+        const context = overlay.getContext('2d');
+
+        let isRunning = false;
+        let stream;
+
+        // 「カメラ起動/停止」ボタン
+        startBtn.addEventListener('click', () => {
+            if (isRunning) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+
+                isRunning = false;
+                startBtn.textContent = 'カメラ起動';
+                captureBtn.disabled = true;
+                context.clearRect(0, 0, overlay.width, overlay.height);
+                textOutput.textContent = '処理結果がここに表示されます。';
+                return;
+            }
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(s => {
+                    stream = s;
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        overlay.width = video.videoWidth;
+                        overlay.height = video.videoHeight;
+
+                        isRunning = true;
+                        startBtn.textContent = 'カメラ停止';
+                        captureBtn.disabled = false;
+
+                        // 赤枠を表示（中央3分割の真ん中）
+                        drawGuide();
+                    };
+                })
+                .catch(err => {
+                    console.error("Camera access denied: ", err);
+                    alert("カメラへのアクセスを許可してください。");
+                });
+        });
+
+        // OCR撮影処理（中央部分だけ切り取り）
+        captureBtn.addEventListener('click', () => {
+            if (!isRunning) return;
+
+            textOutput.textContent = '認識処理中...';
+            context.clearRect(0, 0, overlay.width, overlay.height);
+            drawGuide(); // 枠を再表示
+
+            const tempCanvas = document.createElement('canvas');
+            const tempContext = tempCanvas.getContext('2d');
+
+            // 中央1/3領域の座標
+            const cropX = video.videoWidth / 3;
+            const cropY = 0;
+            const cropWidth = video.videoWidth / 3;
+            const cropHeight = video.videoHeight;
+
+            tempCanvas.width = cropWidth;
+            tempCanvas.height = cropHeight;
+
+            // 中央部分を切り取り
+            tempContext.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+            const imageDataURL = tempCanvas.toDataURL('image/jpeg', 0.8);
+
+            fetch('/ocr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageDataURL })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw new Error(err.error); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                textOutput.textContent = data.text.join('\n') || 'テキストが検出されませんでした。';
+            })
+            .catch(error => {
+                console.error('OCR処理エラー:', error);
+                textOutput.textContent = 'エラーが発生しました: ' +  (error.message || error);
+            });
+        });
+
+        // 赤枠ガイドを描画
+        function drawGuide() {
+            context.strokeStyle = 'red';
+            context.lineWidth = 4;
+
+            const cropX = overlay.width / 3;
+            const cropWidth = overlay.width / 3;
+
+            context.strokeRect(cropX, 0, cropWidth, overlay.height);
+        }
+    </script>
+</body>
+</html>
