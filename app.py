@@ -7,11 +7,17 @@ from PIL import Image
 import pytesseract
 
 # --- ▼▼▼ Tesseractパス設定 ▼▼▼ ---
-try:
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-    print("Tesseract path set successfully.")
-except Exception as e:
-    print(f"!!! TESSERACT PATH ERROR: {e} !!!")
+# Heroku環境ではTesseractは/usr/bin/tesseractに配置される
+if os.environ.get('DYNO'):  # Heroku環境の検出
+    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+    print("Tesseract path set for Heroku environment.")
+else:
+    # ローカル環境用
+    try:
+        pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        print("Tesseract path set for local environment.")
+    except Exception as e:
+        print(f"!!! TESSERACT PATH ERROR: {e} !!!")
 # --- ▲▲▲ Tesseractパス設定 ▲▲▲ ---
 
 app = Flask(__name__)
@@ -101,4 +107,5 @@ def ocr_endpoint():
         return jsonify({"error": f"Tesseract processing error: {e}"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
