@@ -26,6 +26,10 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok", "message": "App is running"})
+
 @app.route('/ocr', methods=['POST'])
 def ocr_endpoint():
     data = request.json
@@ -109,3 +113,6 @@ def ocr_endpoint():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+else:
+    # Heroku環境ではGunicornが直接appオブジェクトを使用
+    pass
